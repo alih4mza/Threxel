@@ -1,0 +1,13 @@
+[Unit]
+Description=Gunicorn instance to serve Flask-SocketIO application
+After=network.target
+
+[Service]
+User=root
+Group=www-data
+WorkingDirectory=/root/threxel
+Environment="PATH=/root/threxel/venv/bin"
+ExecStart=/root/threxel/venv/bin/gunicorn --workers 3 --bind unix:/root/threxel/threxel.sock -m 007 Server:app
+
+[Install]
+WantedBy=multi-user.target

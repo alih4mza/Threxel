@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error - Insider Threat Detection</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <style>
+        body { font-family: 'Arial', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+    <div class="bg-white p-8 rounded-lg shadow-md w-full max-w-md">
+        <h1 class="text-2xl font-bold mb-4 text-center">Dashboard Error</h1>
+        <p class="text-red-600 text-center">{{ error }}</p>
+        {% if diagnostics %}
+        <div class="mt-4">
+            <h2 class="text-lg font-semibold">System Diagnostics:</h2>
+            <pre class="bg-gray-50 p-2 rounded">{{ diagnostics|tojson|safe }}</pre>
+        </div>
+        {% endif %}
+        <a href="/" class="block mt-4 text-center text-blue-600 hover:underline">Return to Dashboard</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insider Threat Detection Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Arial', sans-serif; }
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
+        .modal-content { background-color: #fefefe; margin: 15% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; }
+        .close { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .close:hover, .close:focus { color: black; text-decoration: none; cursor: pointer; }
+        .scroll-to-top { position: fixed; bottom: 20px; right: 20px; background-color: #1a56db; color: white; padding: 10px; border-radius: 50%; cursor: pointer; display: none; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <header class="bg-blue-600 text-white p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold">IT</h1>
+                <p class="text-sm">AI-Powered Insider Threat Detection</p>
+            </div>
+            <div>
+                <p class="text-sm">Real-time user behavior analytics with anomaly detection | Last updated: {{ current_time }}</p>
+            </div>
+            <div class="relative">
+                <button onclick="toggleDropdown()" class="focus:outline-none">
+                    <i class="fas fa-user-circle text-2xl"></i>
+                </button>
+                <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10">
+                    <a href="/change_credentials" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Change Credentials</a>
+                    <a href="/logout" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Logout</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div id="alertModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <p id="alertMessage"></p>
+        </div>
+    </div>
+
+    <main class="container mx-auto p-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {% for agent in agents %}
+            <div class="bg-white rounded-lg shadow-md p-4">
+                <div class="flex items-center mb-4">
+                    <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                        <i class="fas fa-desktop text-blue-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-semibold">{{ agent.current_user }}</h2>
+                        <p class="text-sm text-gray-600">
+                            {% if agent.status|lower == 'ok' or agent.status|lower == 'active' %}
+                                Low Risk (10/100)
+                            {% elif agent.status|lower == 'warning' %}
+                                Medium Risk (50/100)
+                            {% else %}
+                                High Risk (80/100)
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                <p class="text-sm text-gray-600 mb-4">Agent ID: {{ agent.agent_id }} | System: {{ agent.system_name }}</p>
+                <div class="mb-4">
+                    <p class="text-sm font-medium">Details:</p>
+                    <ul class="text-sm text-gray-600">
+                        <li>Agent ID: {{ agent.agent_id }}</li>
+                        <li>System: {{ agent.system_name }}</li>
+                        <li>Version: v{{ agent.version }}</li>
+                        <li>User: {{ agent.current_user }}</li>
+                    </ul>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-gray-50 p-2 rounded">
+                        <p class="text-sm font-medium">CPU Usage</p>
+                        <p class="text-lg">{{ (agent.data_usage / (1024 * 1024))|round(2) }} %</p>
+                        <p class="text-xs text-gray-500">Current CPU usage percentage</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded">
+                        <p class="text-sm font-medium">Memory Usage</p>
+                        <p class="text-lg">0 %</p>
+                        <p class="text-xs text-gray-500">Current memory usage percentage</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded">
+                        <p class="text-sm font-medium">Disk Usage</p>
+                        <p class="text-lg">0 %</p>
+                        <p class="text-xs text-gray-500">Current disk usage percentage</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded">
+                        <p class="text-sm font-medium">Network Usage</p>
+                        <p class="text-lg">{{ (agent.data_usage / (1024 * 1024))|round(2) }} MB</p>
+                        <p class="text-xs text-gray-500">Total network data usage (sent + received)</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded">
+                        <p class="text-sm font-medium">Behavior Anomalies</p>
+                        <p class="text-lg">{{ agent.behavior_anomalies }}</p>
+                        <p class="text-xs text-gray-500">Number of detected behavioral anomalies</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded">
+                        <p class="text-sm font-medium">Activity Logs</p>
+                        <p class="text-lg">{{ agent.total_logs }} ({{ agent.logs|length }} displayed)</p>
+                        <p class="text-xs text-gray-500">Total activity logs (displayed logs out of total)</p>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <h3 class="text-lg font-semibold mb-2">CPU Performance Trend (Last 5 Updates)</h3>
+                    <canvas id="cpuChart_{{ agent.agent_id }}" height="100"></canvas>
+                </div>
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-semibold">Recent Activity Logs (Last 25)</h3>
+                        <button onclick="toggleLogs('{{ agent.agent_id }}')" class="text-blue-600 text-sm">Hide Logs</button>
+                    </div>
+                    <div class="mb-2">
+                        <select onchange="filterLogs('{{ agent.agent_id }}', this.value)" class="border rounded p-1 text-sm">
+                            <option value="all">All</option>
+                            <option value="normal">Normal</option>
+                            <option value="anomalous">Anomalous</option>
+                        </select>
+                    </div>
+                    <div id="logTable_{{ agent.agent_id }}">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="bg-gray-200">
+                                    <th class="p-2">Time</th>
+                                    <th class="p-2">Activity</th>
+                                    <th class="p-2">Status</th>
+                                    <th class="p-2">Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if agent.logs %}
+                                    {% for log in agent.logs %}
+                                        <tr class="{% if log.anomaly_score > 0.3 %}bg-red-50{% else %}bg-white{% endif %}">
+                                            <td class="p-2">{{ log.timestamp }}</td>
+                                            <td class="p-2">{{ log.activity }}</td>
+                                            <td class="p-2">
+                                                {% if log.anomaly_score > 0.3 %}
+                                                    <span class="text-red-600">
+                                                        {% if log.alerts %}
+                                                            {{ log.alerts|join(', ') }}
+                                                        {% else %}
+                                                            Suspicious behavior detected
+                                                        {% endif %}
+                                                    </span>
+                                                {% else %}
+                                                    Normal
+                                                {% endif %}
+                                            </td>
+                                            <td class="p-2">{{ log.details|default('No additional details', true) }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="p-2 text-center">No activity logs available</td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="bg-white rounded-lg shadow-md p-4 text-center">
+                <p class="text-lg font-semibold">No agents found</p>
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+
+    <footer class="bg-gray-800 text-white p-4 mt-8">
+        <div class="container mx-auto">
+            <div class="flex flex-col md:flex-row justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-semibold">AI-Powered Insider Threat Detection</h3>
+                    <p class="text-sm">Developed by Islamia University Bahawalpur</p>
+                </div>
+                <div class="mt-4 md:mt-0">
+                    <a href="#" class="text-sm mx-2 hover:underline">About</a>
+                    <a href="#" class="text-sm mx-2 hover:underline">Contact</a>
+                    <a href="#" class="text-sm mx-2 hover:underline">Privacy Policy</a>
+                    <a href="#" class="text-sm mx-2 hover:underline">Terms of Service</a>
+                </div>
+            </div>
+            <div class="text-center mt-4">
+                <p class="text-sm">&copy; 2025 Insider Threat Detection. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <div class="scroll-to-top" onclick="scrollToTop()">
+        <i class="fas fa-arrow-up"></i>
+    </div>
+
+    <script>
+        const socket = io('https://www.threxel.com');
+        const charts = {};
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('agent_registered', (agent) => {
+            location.reload();
+        });
+
+        socket.on('log_update', (data) => {
+            location.reload();
+        });
+
+        socket.on('alert', (data) => {
+            const modal = document.getElementById('alertModal');
+            const message = document.getElementById('alertMessage');
+            message.textContent = data.message;
+            modal.style.display = 'block';
+        });
+
+        document.querySelectorAll('.close').forEach(closeBtn => {
+            closeBtn.onclick = () => {
+                document.getElementById('alertModal').style.display = 'none';
+            };
+        });
+
+        window.onclick = (event) => {
+            if (event.target == document.getElementById('alertModal')) {
+                document.getElementById('alertModal').style.display = 'none';
+            }
+        };
+
+        function toggleDropdown() {
+            document.getElementById('userDropdown').classList.toggle('hidden');
+        }
+
+        function toggleLogs(agentId) {
+            const table = document.getElementById(`logTable_${agentId}`);
+            table.style.display = table.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function filterLogs(agentId, filter) {
+            const table = document.getElementById(`logTable_${agentId}`);
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const statusCell = row.querySelector('td:nth-child(3)');
+                const isAnomalous = statusCell.querySelector('.text-red-600');
+                if (filter === 'all') {
+                    row.style.display = '';
+                } else if (filter === 'normal' && !isAnomalous) {
+                    row.style.display = '';
+                } else if (filter === 'anomalous' && isAnomalous) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.onscroll = () => {
+            const scrollBtn = document.querySelector('.scroll-to-top');
+            if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+                scrollBtn.style.display = 'block';
+            } else {
+                scrollBtn.style.display = 'none';
+            }
+        };
+
+        document.querySelectorAll('canvas').forEach(canvas => {
+            const agentId = canvas.id.split('_')[1];
+            charts[agentId] = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: ['1', '2', '3', '4', '5'],
+                    datasets: [{
+                        label: 'CPU Usage (%)',
+                        data: [0, 0, 0, 0, 0],
+                        borderColor: '#1a56db',
+                        fill: false
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

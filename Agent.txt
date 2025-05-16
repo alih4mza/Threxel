@@ -1,0 +1,299 @@
+import psutil
+import time
+import socket
+import requests
+import getpass
+import geoip2.database
+from datetime import datetime, timezone
+import win32evtlog
+from collections import defaultdict
+import platform
+import json
+from dotenv import load_dotenv
+import os
+import hashlib
+import logging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+# Load environment variables
+load_dotenv()
+
+# Configuration
+SERVER_URL = "http://localhost:5000/log"  # Changed to localhost
+SYSTEM_NAME = socket.gethostname()
+GEOIP_DB = "GeoLite2-City.mmdb"
+AGENT_ID = "agent1"
+AUTH_TOKEN = "K60f4nFKSb020wy-AFZxRze7sErXJBJ7rSKmbpIj4Iw"
+HEARTBEAT_INTERVAL = 60
+MAX_RETRIES = 5
+TIMEOUT = 30
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('agent.log'),
+        logging.StreamHandler()
+    ]
+)
+
+class ThreatAgent:
+    def __init__(self):
+        self.user = getpass.getuser()
+        self.os_type = platform.system()
+        self.agent_version = "1.2.1"
+        self.agent_id = AGENT_ID
+        self.threat_keywords = [
+            "failed", "unauthorized", "breach", "attack", 
+            "malware", "virus", "intrusion", "suspicious",
+            "password", "credential", "admin", "root"
+        ]
+        self.normal_behavior = self._establish_baseline()
+        self.session_hash = self._generate_session_hash()
+        self.geo_reader = self._init_geoip()
+        self.http_client = self._init_http_client()
+        
+    def _init_geoip(self):
+        try:
+            if os.path.exists(GEOIP_DB):
+                return geoip2.database.Reader(GEOIP_DB)
+            logging.warning("GeoIP database not found, location services will be limited")
+            return None
+        except Exception as e:
+            logging.error(f"GeoIP initialization error: {e}")
+            return None
+            
+    def _init_http_client(self):
+        session = requests.Session()
+        retries = Retry(
+            total=MAX_RETRIES,
+            backoff_factor=1,
+            status_forcelist=[500, 502, 503, 504]
+        )
+        session.mount('http://', HTTPAdapter(max_retries=retries))
+        session.mount('https://', HTTPAdapter(max_retries=retries))
+        return session
+    
+    def _generate_session_hash(self):
+        raw = f"{SYSTEM_NAME}{self.user}{datetime.now().timestamp()}"
+        return hashlib.sha256(raw.encode()).hexdigest()
+    
+    def _establish_baseline(self):
+        return {
+            "typical_hours": range(8, 18),
+            "normal_locations": ["Office", "Home"],
+            "common_processes": ["explorer.exe", "chrome.exe", "winlogon.exe"],
+            "max_network_usage": 500 * 1024 * 1024  # 500MB
+        }
+    
+    def get_system_info(self):
+        return {
+            "os": self.os_type,
+            "version": platform.version(),
+            "architecture": platform.machine(),
+            "processor": platform.processor(),
+            "ram": psutil.virtual_memory().total // (1024 * 1024),
+            "cores": psutil.cpu_count(logical=False),
+            "logical_cores": psutil.cpu_count(logical=True)
+        }
+    
+    def get_location(self):
+        try:
+            ip = requests.get("https://api.ipify.org", timeout=5).text
+            if self.geo_reader:
+                response = self.geo_reader.city(ip)
+                return f"{response.city.name}, {response.country.name}" if response.city.name else response.country.name
+            return ip  # Return just the IP if no GeoIP database
+        except Exception as e:
+            logging.warning(f"Location error: {e}")
+            return "Unknown"
+    
+    def get_system_logs(self):
+        try:
+            if self.os_type != "Windows":
+                return [{"info": "Event logs only available on Windows"}]
+                
+            hand = win32evtlog.OpenEventLog(None, "Security")
+            flags = win32evtlog.EVENTLOG_BACKWARDS_READ|win32evtlog.EVENTLOG_SEQUENTIAL_READ
+            events = win32evtlog.ReadEventLog(hand, flags, 0)
+            
+            logs = []
+            for event in events[:50]:  # Limit to 50 most recent events
+                try:
+                    log_entry = {
+                        "id": event.EventID,
+                        "time": event.TimeGenerated.strftime("%Y-%m-%d %H:%M"),
+                        "source": event.SourceName,
+                        "message": ' '.join(str(i) for i in event.StringInserts) if event.StringInserts else ""
+                    }
+                    logs.append(log_entry)
+                except Exception:
+                    continue
+            
+            win32evtlog.CloseEventLog(hand)
+            return logs
+        except Exception as e:
+            logging.error(f"Log collection error: {e}")
+            return [{"error": "Logs unavailable"}]
+    
+    def analyze_network(self, sent, received):
+        total = sent + received
+        threshold = self.normal_behavior["max_network_usage"]
+        
+        if total > threshold:
+            return True, f"High network usage: {round(total/(1024*1024), 2)}MB (Threshold: {threshold//(1024*1024)}MB)"
+        return False, "Normal network activity"
+    
+    def analyze_processes(self):
+        suspicious_processes = []
+        common_processes = [p.lower() for p in self.normal_behavior["common_processes"]]
+        
+        for proc in psutil.process_iter(['name', 'exe', 'username', 'cmdline']):
+            try:
+                proc_info = proc.info
+                if not proc_info['name'].lower() in common_processes:
+                    suspicious_processes.append({
+                        "name": proc_info['name'],
+                        "path": proc_info['exe'],
+                        "user": proc_info['username'],
+                        "cmdline": proc_info['cmdline'],
+                        "cpu": proc.cpu_percent(),
+                        "memory": proc.memory_info().rss // (1024 * 1024)
+                    })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        
+        return suspicious_processes[:20]  # Limit to 20 processes
+    
+    def analyze_logs(self, logs):
+        threat_indicators = []
+        event_counts = defaultdict(int)
+        
+        for log in logs:
+            if isinstance(log, dict) and 'id' in log:
+                event_counts[log['id']] += 1
+                message = str(log.get('message', '')).lower()
+                for keyword in self.threat_keywords:
+                    if keyword in message:
+                        threat_indicators.append(f"Event {log['id']}: {keyword} detected")
+                        break
+        
+        anomalies = []
+        if event_counts.get(4625, 0) > 3:  # Failed login events
+            anomalies.append(f"Multiple failed logins ({event_counts[4625]})")
+        
+        if event_counts.get(4688, 0) > 10:  # Process creation events
+            anomalies.append(f"Unusual process activity ({event_counts[4688]} events)")
+        
+        risk_score = min(100, len(threat_indicators) * 10 + len(anomalies) * 20)
+        
+        return {
+            "risk_score": risk_score,
+            "suspicious_patterns": threat_indicators[:5] + anomalies,
+            "event_stats": dict(event_counts)
+        }
+    
+    def collect_data(self):
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        processes = self.analyze_processes()
+        logs = self.get_system_logs()
+        
+        net_anomaly, net_message = self.analyze_network(network.bytes_sent, network.bytes_recv)
+        log_analysis = self.analyze_logs(logs)
+        
+        return {
+            "agent_id": self.agent_id,
+            "agent_version": self.agent_version,
+            "system_name": SYSTEM_NAME,
+            "system_info": self.get_system_info(),
+            "user_id": self.user,
+            "session_id": self.session_hash,
+            "login_time": datetime.now().strftime("%H:%M"),
+            "location": self.get_location(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "performance": {
+                "cpu": cpu_percent,
+                "memory": memory.percent,
+                "disk": disk.percent
+            },
+            "network_traffic": {
+                "sent": network.bytes_sent,
+                "received": network.bytes_recv,
+                "anomaly": net_anomaly,
+                "message": net_message
+            },
+            "processes": processes,
+            "logs": logs,
+            "analysis": log_analysis
+        }
+    
+    def send_data(self, data):
+        try:
+            headers = {
+                "Authorization": f"Bearer {AUTH_TOKEN}",
+                "X-Agent-ID": self.agent_id,
+                "User-Agent": f"ThreatAgent/{self.agent_version}",
+                "Content-Type": "application/json"
+            }
+            
+            response = self.http_client.post(
+                SERVER_URL,
+                json=data,
+                headers=headers,
+                timeout=TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("alerts"):
+                    logging.warning(f"Alerts generated: {result['alerts']}")
+                return True
+            else:
+                logging.error(f"Server response: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logging.error(f"Server communication error: {e}")
+            return False
+    
+    def run(self):
+        logging.info(f"Starting agent {self.agent_id} v{self.agent_version} on {SYSTEM_NAME}")
+        logging.info(f"User: {self.user}")
+        logging.info(f"OS: {self.os_type}")
+        logging.info(f"Server: {SERVER_URL}")
+        
+        while True:
+            try:
+                start_time = time.time()
+                
+                data = self.collect_data()
+                success = self.send_data(data)
+                
+                if success:
+                    logging.info(f"Data sent successfully in {time.time()-start_time:.2f}s")
+                else:
+                    logging.warning("Failed to send data")
+                
+                elapsed = time.time() - start_time
+                sleep_time = max(0, HEARTBEAT_INTERVAL - elapsed)
+                time.sleep(sleep_time)
+                
+            except KeyboardInterrupt:
+                logging.info("\nAgent stopped by user")
+                break
+            except Exception as e:
+                logging.error(f"Runtime error: {e}")
+                time.sleep(min(30, HEARTBEAT_INTERVAL))
+
+if __name__ == "__main__":
+    try:
+        agent = ThreatAgent()
+        agent.run()
+    except Exception as e:
+        logging.critical(f"Agent failed to start: {e}")
+        raise

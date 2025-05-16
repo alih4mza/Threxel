@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data:;">
+    <title>Insider Threat Monitoring Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #3a86ff;
+            --danger: #ff006e;
+            --warning: #fb5607;
+            --success: #06d6a0;
+            --dark: #1a1a2e;
+            --light: #f5f7fa;
+            --gray: #e2e8f0;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--light);
+            color: var(--dark);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--gray);
+        }
+        
+        /* [Keep all other CSS styles the same as before] */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="dashboard-header">
+            <div class="header-title">
+                <i class="fas fa-shield-alt logo"></i>
+                <h1>Insider Threat Monitoring Dashboard</h1>
+            </div>
+            <div class="header-actions">
+                <button class="refresh-btn" onclick="safeReload()">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+                <div class="last-updated">
+                    <i class="far fa-clock"></i> Last updated: {{ current_time }}
+                </div>
+            </div>
+        </header>
+        
+        <div class="dashboard-grid">
+            <!-- Sidebar with stats and agents -->
+            <div class="sidebar">
+                <div class="card">
+                    <h3 class="card-title"><i class="fas fa-chart-line"></i> System Overview</h3>
+                    <div class="stat-value">{{ stats.active_agents }}/{{ agents|length }}</div>
+                    <div class="stat-label">Active Agents</div>
+                </div>
+                
+                <!-- [Keep all other dashboard sections the same] -->
+                
+                <div class="card">
+                    <h3 class="card-title"><i class="fas fa-laptop-code"></i> Agent Status</h3>
+                    <div class="agents-list">
+                        {% for agent in agents %}
+                        <div class="agent-item">
+                            <div class="status-indicator {% if agent.status == 'active' %}status-active{% else %}status-inactive{% endif %}"></div>
+                            <div class="agent-info">
+                                <div class="agent-name">{{ agent.agent_id|default('Unknown', true) }}</div>
+                                <div class="agent-details">
+                                    <span>{{ agent.system_name|default('Unknown', true) }}</span>
+                                    <span>v{{ agent.version|default('unknown', true) }}</span>
+                                    <span>User: {{ agent.current_user|default('Unknown', true) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="no-agents">
+                            <i class="fas fa-info-circle"></i> No agents found
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- [Keep the rest of your dashboard content the same] -->
+        </div>
+    </div>
+
+    <script>
+        // [Keep all your JavaScript code the same]
+    </script>
+</body>
+</html>

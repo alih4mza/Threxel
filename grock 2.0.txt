@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insider Threat Monitoring Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8fafc;
+            color: #1e293b;
+            display: flex;
+        }
+        .sidebar {
+            width: 200px;
+            background-color: #1e40af;
+            color: white;
+            padding: 20px;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+        .sidebar a {
+            color: white;
+            text-decoration: none;
+            display: block;
+            padding: 10px 0;
+            font-size: 1em;
+        }
+        .sidebar a:hover {
+            background-color: #1e3a8a;
+        }
+        .content {
+            margin-left: 220px;
+            width: calc(100% - 220px);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 2.2em;
+            color: #1e40af;
+            margin: 0;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .refresh-button {
+            background-color: #1e40af;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.2s;
+        }
+        .refresh-button:hover {
+            background-color: #1e3a8a;
+        }
+        .refresh-button:disabled {
+            background-color: #94a3b8;
+            cursor: not-allowed;
+        }
+        .search-bar {
+            padding: 10px;
+            width: 250px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 1em;
+        }
+        .last-updated {
+            color: #64748b;
+            font-size: 0.9em;
+        }
+        .system-overview {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .system-overview h2 {
+            margin-top: 0;
+            color: #1e293b;
+        }
+        .agent-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .agent-table th, .agent-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .agent-table th {
+            background-color: #1e40af;
+            color: white;
+            font-weight: 600;
+        }
+        .agent-table tr:last-child td {
+            border-bottom: none;
+        }
+        .status-ok {
+            color: #22c55e;
+            font-weight: 600;
+        }
+        .status-warning {
+            color: #eab308;
+            font-weight: 600;
+        }
+        .status-error {
+            color: #ef4444;
+            font-weight: 600;
+        }
+        .status-unknown {
+            color: #64748b;
+            font-weight: 600;
+        }
+        .threat-bar {
+            height: 10px;
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+        .threat-low { background-color: #22c55e; width: 33%; }
+        .threat-medium { background-color: #eab308; width: 66%; }
+        .threat-high { background-color: #ef4444; width: 100%; }
+        .tooltip {
+            position: relative;
+            cursor: pointer;
+        }
+        .tooltip:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            background-color: #1e293b;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            white-space: nowrap;
+            z-index: 10;
+        }
+        .collapsible {
+            background-color: #f0f4f8;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: none;
+        }
+        .collapsible.active {
+            display: block;
+        }
+        .toggle-btn {
+            background: none;
+            border: none;
+            color: #1e40af;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .no-agents {
+            text-align: center;
+            padding: 20px;
+            color: #64748b;
+            background-color: white;
+            border-radius: 8px;
+        }
+        @media (max-width: 768px) {
+            .sidebar {
+                display: none;
+            }
+            .content {
+                margin-left: 0;
+                width: 100%;
+            }
+            .controls {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .search-bar {
+                width: 100%;
+            }
+            .agent-table {
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <a href="#overview">Overview</a>
+        <a href="#agents">Agents</a>
+    </div>
+    <div class="content">
+        <div class="header">
+            <h1>AI-Powered Insider Threat Detection System</h1>
+        </div>
+        <div class="controls">
+            <input type="text" class="search-bar" placeholder="Search agents..." oninput="filterAgents(this.value)">
+            <div>
+                <button class="refresh-button" onclick="refreshDashboard()" aria-label="Refresh dashboard">Refresh</button>
+                <div class="last-updated">Last updated: {{ current_time|default('Not available', true) }}</div>
+            </div>
+        </div>
+
+        <div class="system-overview" id="overview">
+            <h2>System Overview</h2>
+            <p>{{ stats.active_agents }}/{{ agents|length }} Active Agents</p>
+        </div>
+
+        <div class="agent-status" id="agents">
+            <h2>Agent Status</h2>
+            {% for agent in agents %}
+            <table class="agent-table" role="grid">
+                <tr>
+                    <th colspan="2" scope="colgroup">Agent: {{ agent.agent_id|default('Unknown', true) }}</th>
+                </tr>
+                <tr>
+                    <td scope="row">System Name</td>
+                    <td>{{ agent.system_name|default('Unknown', true) }}</td>
+                </tr>
+                <tr>
+                    <td scope="row">Version</td>
+                    <td>v{{ agent.version|default('unknown', true) }}</td>
+                </tr>
+                <tr>
+                    <td scope="row">Current User</td>
+                    <td>{{ agent.current_user|default('Unknown', true) }}</td>
+                </tr>
+                <tr>
+                    <td scope="row">Data Usage</td>
+                    <td>{{ agent.data_usage|default('0 MB', true) }}</td>
+                </tr>
+                <tr>
+                    <td scope="row">Behavior</td>
+                    <td class="tooltip" data-tooltip="{{ agent.behavior|default('Normal activity', true) }}">{{ agent.behavior|default('Normal', true) }}</td>
+                </tr>
+                <tr>
+                    <td scope="row">Status</td>
+                    <td class="{% if agent.status|lower == 'ok' %}status-ok{% elif agent.status|lower == 'warning' %}status-warning{% elif agent.status|lower == 'error' %}status-error{% else %}status-unknown{% endif %}" data-tooltip="{{ agent.status|default('No status available', true)|capitalize }}">
+                        {{ agent.status|default('Unknown', true)|capitalize }}
+                    </td>
+                </tr>
+                <tr>
+                    <td scope="row">Threat Level</td>
+                    <td>
+                        <div class="threat-bar {% if agent.status|lower == 'ok' %}threat-low{% elif agent.status|lower == 'warning' %}threat-medium{% elif agent.status|lower == 'error' %}threat-high{% else %}threat-low{% endif %}"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2">
+                        <button class="toggle-btn" onclick="this.nextElementSibling.classList.toggle('active')">View Logs</button>
+                        <div class="collapsible">Log details go here (e.g., {{ agent.logs|default('No logs available', true) }})</div>
+                    </td>
+                </tr>
+            </table>
+            {% else %}
+            <div class="no-agents">No agents found</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        function refreshDashboard() {
+            const button = document.querySelector('.refresh-button');
+            button.disabled = true;
+            button.textContent = 'Refreshing...';
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        }
+
+        function filterAgents(query) {
+            const tables = document.querySelectorAll('.agent-table');
+            query = query.toLowerCase();
+            tables.forEach(table => {
+                const agentId = table.querySelector('th').textContent.toLowerCase();
+                const systemName = table.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                if (agentId.includes(query) || systemName.includes(query)) {
+                    table.style.display = '';
+                } else {
+                    table.style.display = 'none';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
